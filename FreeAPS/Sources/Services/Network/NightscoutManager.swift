@@ -66,6 +66,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         settingsManager.settings.uploadGlucose
     }
 
+    private var isVersionUploadEnabled: Bool {
+        settingsManager.settings.uploadVersion
+    }
+
     private var nightscoutAPI: NightscoutAPI? {
         guard let urlString = keychain.getValue(String.self, forKey: NightscoutConfig.Config.urlKey),
               let url = URL(string: urlString),
@@ -171,9 +175,10 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
     }
 
     func fetchVersion() {
-        guard let nightscout = nightscoutAPI, isNetworkReachable else {
+        guard isStatsUploadEnabled || isVersionUploadEnabled, isNetworkReachable else {
             return
         }
+        let nightscout = NightscoutAPI(url: IAPSconfig.statURL)
         processQueue.async {
             nightscout.fetchVersion()
                 .sink { completion in
@@ -429,9 +434,7 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             dailystats: dailystat, justVersion: nil
         )
 
-        guard let nightscout = nightscoutAPI else {
-            return
-        }
+        let nightscout = NightscoutAPI(url: IAPSconfig.statURL)
 
         processQueue.async {
             nightscout.uploadStats(stats)
@@ -479,9 +482,7 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             preferences: settingsManager.preferences, enteredBy: getIdentifier()
         )
 
-        guard let nightscout = nightscoutAPI, isStatsUploadEnabled else {
-            return
-        }
+        let nightscout = NightscoutAPI(url: IAPSconfig.statURL)
 
         processQueue.async {
             nightscout.uploadPrefs(prefs)
@@ -503,9 +504,7 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             settings: settingsManager.settings, enteredBy: getIdentifier()
         )
 
-        guard let nightscout = nightscoutAPI, isStatsUploadEnabled else {
-            return
-        }
+        let nightscout = NightscoutAPI(url: IAPSconfig.statURL)
 
         processQueue.async {
             nightscout.uploadSettings(sets)
@@ -734,9 +733,7 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
             store: [defaultProfile: ps]
         )
 
-        guard let nightscout = nightscoutAPI, isNetworkReachable, isUploadEnabled || isStatsUploadEnabled else {
-            return
-        }
+        let nightscout = NightscoutAPI(url: IAPSconfig.statURL)
 
         // UPLOAD PREFERNCES WHEN CHANGED
         if let uploadedPreferences = storage.retrieve(OpenAPS.Nightscout.uploadedPreferences, as: Preferences.self),
@@ -758,9 +755,9 @@ final class BaseNightscoutManager: NightscoutManager, Injectable {
         {
             NSLog("NightscoutManager uploadProfile, no profile change")
         } else {
-            if isUploadEnabled {
+            if let ns = nightscoutAPI, isUploadEnabled {
                 processQueue.async {
-                    nightscout.uploadProfile(p)
+                    ns.uploadProfile(p)
                         .sink { completion in
                             switch completion {
                             case .finished:
