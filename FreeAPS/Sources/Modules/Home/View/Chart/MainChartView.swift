@@ -132,15 +132,6 @@ struct MainChartView: View {
         return formatter
     }
 
-    private var fpuFormatter: NumberFormatter {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 1
-        formatter.decimalSeparator = "."
-        formatter.minimumIntegerDigits = 0
-        return formatter
-    }
-
     private var fetchedTargetFormatter: NumberFormatter {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
@@ -289,7 +280,7 @@ struct MainChartView: View {
             let value = round(Double(range.maxValue) - Double(line) * valueStep) *
                 (data.units == .mmolL ? Double(GlucoseUnits.exchangeRate) : 1)
 
-            return Text(glucoseFormatter.string(from: value as NSNumber)!)
+            return Text(glucoseFormatter.string(from: value as NSNumber) ?? "")
                 .position(CGPoint(x: fullSize.width - 12, y: range.minY + CGFloat(line) * yStep))
                 .font(.bolusDotFont)
                 .asAny()
@@ -331,7 +322,6 @@ struct MainChartView: View {
                 ZStack {
                     xGridView(fullSize: fullSize)
                     carbsView(fullSize: fullSize)
-                    fpuView(fullSize: fullSize)
                     bolusView(fullSize: fullSize)
                     if data.smooth { unSmoothedGlucoseView(fullSize: fullSize) }
                     else { connectingGlucoseLinesView(fullSize: fullSize) }
@@ -340,6 +330,7 @@ struct MainChartView: View {
                     manualGlucoseCenterView(fullSize: fullSize)
                     announcementView(fullSize: fullSize)
                     predictionsView(fullSize: fullSize)
+                    if data.fpus { fpuView(fullSize: fullSize) }
                 }
                 timeLabelsView(fullSize: fullSize)
             }
@@ -372,7 +363,7 @@ struct MainChartView: View {
                 path.addLine(to: CGPoint(x: x, y: fullSize.height - 20))
             }
             .stroke(
-                colorScheme == .dark ? Color.white : Color.black,
+                colorScheme == .dark ? IAPSconfig.chartBackgroundLight : IAPSconfig.chartBackgroundDark,
                 style: StrokeStyle(lineWidth: 0.5, dash: [5])
             )
         }
@@ -479,14 +470,9 @@ struct MainChartView: View {
                     command.contains("bolus") ?
                     Command.bolus : ""
 
-                VStack {
-                    Image("owl").resizable().frame(maxWidth: Config.owlSeize, maxHeight: Config.owlSeize).scaledToFill()
-                        .overlay {
-                            Text(type).font(.announcementSymbolFont).foregroundStyle(.orange)
-                                .offset(x: 0, y: -15)
-                        }
-                    // Image("owl").resizable().frame(maxWidth: Config.owlSeize, maxHeight: Config.owlSeize).scaledToFill()
-                }.position(position).asAny()
+                Text(type).font(.announcementSymbolFont).foregroundStyle(.orange)
+                    .offset(x: 0, y: -15)
+                    .position(position).asAny()
             }
         }
         .onChange(of: data.announcement) {
@@ -587,7 +573,7 @@ struct MainChartView: View {
 
             ForEach(carbsDots, id: \.rect.minX) { info -> AnyView in
                 let position = CGPoint(x: info.rect.midX, y: info.rect.maxY + 8)
-                return Text(carbsFormatter.string(from: info.value as NSNumber)!).font(.carbsDotFont)
+                return Text(carbsFormatter.string(from: info.value as NSNumber) ?? "").font(.carbsDotFont)
                     .position(position)
                     .asAny()
             }
@@ -603,9 +589,20 @@ struct MainChartView: View {
     private func fpuView(fullSize: CGSize) -> some View {
         ZStack {
             fpuPath
-                .fill(.orange.opacity(0.5))
+                .fill(Color(.systemGray3))
             fpuPath
-                .stroke(Color.primary, lineWidth: 0.2)
+                .stroke(Color.loopYellow, lineWidth: 1)
+
+            if data.fpuAmounts {
+                ForEach(fpuDots, id: \.rect.minX) { info -> AnyView in
+                    let position = CGPoint(x: info.rect.midX, y: info.rect.maxY + 8)
+                    return Text(carbsFormatter.string(from: info.value as NSNumber) ?? "")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .position(position)
+                        .asAny()
+                }
+            }
         }
         .onChange(of: data.carbs) {
             calculateFPUsDots(fullSize: fullSize)
@@ -921,7 +918,7 @@ extension MainChartView {
                 fullSize: fullSize,
                 autotuned: false
             )
-            let tempBasalPoints = firstRegularBasalPoints + data.tempBasals.chunks(ofCount: 2).map { chunk -> [CGPoint] in
+            let tempBasalPoints = firstRegularBasalPoints + data.tempBasals.windows(ofCount: 2).map { chunk -> [CGPoint] in
                 let chunk = Array(chunk)
                 guard chunk.count == 2, chunk[0].type == .tempBasal, chunk[1].type == .tempBasalDuration else { return [] }
                 let timeBegin = chunk[0].timestamp.timeIntervalSince1970
